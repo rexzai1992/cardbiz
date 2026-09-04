@@ -33,6 +33,8 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -84,7 +86,8 @@ class MainActivity : Activity() {
     private lateinit var amountInput: EditText
     private lateinit var testModeCheck: CheckBox
     private lateinit var settlementCheck: CheckBox
-    private lateinit var noReceiptCheck: CheckBox
+    private lateinit var kioskModeButton: RadioButton
+    private lateinit var posModeButton: RadioButton
     private lateinit var pingButton: Button
     private lateinit var payButton: Button
     private lateinit var ewalletButton: Button
@@ -211,6 +214,21 @@ class MainActivity : Activity() {
         referenceRow.addView(secondaryButton("New") { transactionInput.setText(newReference()) })
         content.addView(referenceRow, matchWrap())
 
+        content.addView(label("DEVICE MODE"))
+        val modeGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        kioskModeButton = RadioButton(this).apply { text = "KIOSK - no receipt" }
+        posModeButton = RadioButton(this).apply { text = "POS - terminal prints receipt" }
+        modeGroup.addView(kioskModeButton, weighted())
+        modeGroup.addView(posModeButton, weighted())
+        val kiosk = getPreferences(Context.MODE_PRIVATE).getBoolean(PREF_KIOSK_MODE, true)
+        (if (kiosk) kioskModeButton else posModeButton).isChecked = true
+        modeGroup.setOnCheckedChangeListener { _, _ ->
+            getPreferences(Context.MODE_PRIVATE).edit().putBoolean(PREF_KIOSK_MODE, kioskModeButton.isChecked).apply()
+            appendLog(if (kioskModeButton.isChecked) "Device mode: KIOSK (Purchase sends 09=0, no receipt)" else "Device mode: POS (terminal prints receipt)")
+        }
+        content.addView(modeGroup, matchWrap())
+        content.addView(text("Kiosk adds Receipt Required = 0 (field 09) to every Purchase. POS leaves the field out so the terminal prints its normal receipt.", 11f, Color.DKGRAY))
+
         testModeCheck = CheckBox(this).apply {
             text = "Confirmed: terminal uses a TEST merchant profile"
             setTextColor(DANGER)
@@ -308,13 +326,8 @@ class MainActivity : Activity() {
         tcpPortContainer = labeled("TCP PORT", tcpPortInput)
         addView(tcpPortContainer)
 
-        addView(sectionTitle("Kiosk mode - receipt"))
-        noReceiptCheck = CheckBox(this@MainActivity).apply {
-            text = "No receipt: send Receipt Required = 0 (field 09) with every Purchase"
-            isChecked = true
-        }
-        addView(noReceiptCheck)
-        addView(text("The app never prints. This flag asks the terminal not to print either. v1.59 no longer lists field 09 for Purchase, so if the terminal still prints, CardBiz must disable receipt printing in the terminal's ECR profile.", 11f, Color.DKGRAY))
+        addView(sectionTitle("Receipt behaviour"))
+        addView(text("The app never prints. In KIOSK mode field 09 = 0 asks the terminal not to print either; v1.59 no longer lists field 09 for Purchase, so if a kiosk terminal still prints, CardBiz must disable receipt printing in that terminal's ECR profile. POS mode sends no flag and the terminal prints as configured.", 11f, Color.DKGRAY))
 
         addView(sectionTitle("Payment routes (Merchant Index M1)"))
         PaymentRoute.entries.forEach { route ->
@@ -647,7 +660,7 @@ class MainActivity : Activity() {
                     transactionId = requestedReference,
                     amountText = requestedAmount,
                     merchantIndex = route?.merchantIndex ?: "",
-                    suppressReceipt = type == EcrCommandType.PURCHASE && noReceiptCheck.isChecked,
+                    suppressReceipt = type == EcrCommandType.PURCHASE && kioskModeButton.isChecked,
                 ),
             )
         } catch (error: Exception) {
@@ -933,6 +946,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "CardBizEcrTest"
+        private const val PREF_KIOSK_MODE = "kiosk_mode"
         private const val REQUEST_BLUETOOTH = 1001
         private const val ACTION_USB_PERMISSION = "com.cardbiz.ecrtest.USB_PERMISSION"
         private const val MAX_LOG_CHARS = 80_000
