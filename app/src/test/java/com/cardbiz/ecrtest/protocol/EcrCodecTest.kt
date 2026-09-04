@@ -208,6 +208,24 @@ class EcrCodecTest {
     }
 
     @Test
+    fun purchaseAppendsReceiptNotRequiredFlagWhenSuppressed() {
+        val request = EcrCommands.build(
+            EcrCommandInput(
+                EcrCommandType.PURCHASE,
+                "",
+                "12345000001234500000",
+                "1.00",
+                PaymentRoute.CARD.merchantIndex,
+                suppressReceipt = true,
+            ),
+        )
+        val decoded = EcrCodec.decode(request)
+        assertEquals(listOf("66", "40", "09", "M1"), decoded.fields.map { it.code })
+        assertEquals("0", decoded.fieldValue("09"))
+        assertEquals("01", decoded.fieldValue("M1"))
+    }
+
+    @Test
     fun decodeVerifyRequest() {
         val raw = EcrCodec.buildRequest("00", listOf(EcrField("00", "00000000000000000000")))
         val decoded = EcrCodec.decode(raw)

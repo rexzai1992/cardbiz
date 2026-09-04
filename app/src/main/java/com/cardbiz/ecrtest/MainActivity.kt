@@ -84,6 +84,7 @@ class MainActivity : Activity() {
     private lateinit var amountInput: EditText
     private lateinit var testModeCheck: CheckBox
     private lateinit var settlementCheck: CheckBox
+    private lateinit var noReceiptCheck: CheckBox
     private lateinit var pingButton: Button
     private lateinit var payButton: Button
     private lateinit var ewalletButton: Button
@@ -306,6 +307,14 @@ class MainActivity : Activity() {
         }
         tcpPortContainer = labeled("TCP PORT", tcpPortInput)
         addView(tcpPortContainer)
+
+        addView(sectionTitle("Kiosk mode - receipt"))
+        noReceiptCheck = CheckBox(this@MainActivity).apply {
+            text = "No receipt: send Receipt Required = 0 (field 09) with every Purchase"
+            isChecked = true
+        }
+        addView(noReceiptCheck)
+        addView(text("The app never prints. This flag asks the terminal not to print either. v1.59 no longer lists field 09 for Purchase, so if the terminal still prints, CardBiz must disable receipt printing in the terminal's ECR profile.", 11f, Color.DKGRAY))
 
         addView(sectionTitle("Payment routes (Merchant Index M1)"))
         PaymentRoute.entries.forEach { route ->
@@ -638,6 +647,7 @@ class MainActivity : Activity() {
                     transactionId = requestedReference,
                     amountText = requestedAmount,
                     merchantIndex = route?.merchantIndex ?: "",
+                    suppressReceipt = type == EcrCommandType.PURCHASE && noReceiptCheck.isChecked,
                 ),
             )
         } catch (error: Exception) {

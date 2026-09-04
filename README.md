@@ -24,6 +24,7 @@ Use only a CardBiz/Castles terminal configured with a test merchant profile.
 - Connect/disconnect state, raw TX/RX hex, ACK/NACK events and parsed response fields.
 - Ping (`FF`), Verify ID (`00`), Purchase (`20` with `M1=01`, `M1=02` or `M1=99`), Last Transaction Inquiry (`12`), Settlement (`50`), Get Batch Detail (`51`) and Cancel (`XX`).
 - Card purchases record the card type (`D4`, falling back to issuer `D2`), the last four digits of the masked card number (`30`), entry mode (`E6`), RRN, batch, terminal ID, merchant number and terminal date/time in the payment result. The CVV is never returned by the terminal and is not collected.
+- Kiosk mode: the app never prints, and by default appends Receipt Required `09` = `0` to every Purchase. v1.59 removed this field from Purchase, so terminals may ignore it; if the terminal still prints, ask CardBiz to disable receipt printing in the terminal's ECR profile. The toggle is under Connection & Diagnostics.
 - Wallet custom data in field `99` (tag/length/value, e.g. `B910` wallet product name) and DuitNow tags `N8`/`N4`/`N5`/`N6` are parsed and shown in the payment result.
 - Packed-BCD lengths, STX/ETX/LRC, 2-second ACK timeout, three total sends, 2-minute response timeout, response ACK/NACK and multi-message responses.
 - Unit tests matching the PDF's Verify ID, card Purchase, wallet Purchase and DuitNow QR Purchase sample frames byte-for-byte, plus wallet and DuitNow response decoding.

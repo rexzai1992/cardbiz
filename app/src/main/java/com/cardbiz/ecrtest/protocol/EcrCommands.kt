@@ -29,6 +29,13 @@ data class EcrCommandInput(
     val transactionId: String,
     val amountText: String,
     val merchantIndex: String,
+    /**
+     * Kiosk mode: append Receipt Required flag `09` = `0` to Purchase so the terminal prints nothing.
+     * v1.59 dropped this field from Purchase (kept for `11`/`21`); terminals that still honour the
+     * legacy flag stop printing, others ignore it. Terminal receipt printing is otherwise a
+     * CardBiz terminal-profile setting, not a protocol option.
+     */
+    val suppressReceipt: Boolean = false,
 )
 
 object EcrCommands {
@@ -42,6 +49,7 @@ object EcrCommands {
                 if (account.isNotEmpty()) add(field("00", requiredLength(account, 20, "Pay Account ID")))
                 add(field("66", requiredLength(transaction, 20, "Transaction ID")))
                 add(field("40", amount(input.amountText)))
+                if (input.suppressReceipt) add(field("09", "0"))
                 input.merchantIndex.trim().takeIf { it.isNotEmpty() }?.let {
                     require(it.length in 1..2 && it.all(Char::isDigit)) { "Merchant index must be one or two digits" }
                     add(field("M1", it.padStart(2, '0')))

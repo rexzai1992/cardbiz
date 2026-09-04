@@ -41,7 +41,7 @@ The document says the LRC is the XOR of data between STX and ETX, including ETX.
 |---|---:|---|
 | Verify Pay Account ID | `00` | `00` Pay Account ID (20) |
 | Last Transaction Inquiry | `12` | `00` Pay Account ID (20), `66` Transaction ID (20) |
-| Purchase | `20` | optional `00`, `66`, `40`, `M1` = `01` card / `02` e-wallet / `99` DuitNow QR |
+| Purchase | `20` | optional `00`, `66`, `40`, optional `09`=`0` (no receipt, legacy flag), `M1` = `01` card / `02` e-wallet / `99` DuitNow QR |
 | Settlement | `50` | `00`, `66`, `52` force flag (`0` in this app) |
 | Get Batch Detail | `51` | `00`, `66` |
 | Cancel Transaction | `XX` | `00`, `66` |
