@@ -13,6 +13,16 @@ enum class EcrCommandType(val code: String, val title: String) {
     CANCEL("XX", "Cancel Transaction (XX)"),
 }
 
+/**
+ * Purchase (20) routing via Merchant Index `M1`, per spec v1.59 section 7.6.
+ * The terminal skips its SELECT MERCHANT screen and goes straight to the chosen flow.
+ */
+enum class PaymentRoute(val merchantIndex: String, val title: String, val terminalInstruction: String) {
+    CARD("01", "Card", "Card selected automatically - tap or insert the test card"),
+    EWALLET_QR("99", "E-wallet QR", "Terminal is showing a DuitNow QR - scan it with the customer's e-wallet app (TNG, Boost, GrabPay, MAE)"),
+    SCAN_CUSTOMER_QR("02", "Scan customer QR", "Terminal camera is opening - point it at the QR / barcode shown in the customer's e-wallet app"),
+}
+
 data class EcrCommandInput(
     val type: EcrCommandType,
     val payAccountId: String,

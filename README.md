@@ -8,7 +8,7 @@ Use only a CardBiz/Castles terminal configured with a test merchant profile.
 
 - Ping (`FF`) is the first connection test when no Pay Account ID is available.
 - Purchase stays locked until Ping returns a valid `FF/00` or `FF/CP` response and the operator confirms test mode. Both responses have been observed across terminal firmware.
-- This build is card-only. Test Purchase always sends Merchant Index `M1=01` and no wallet or QR transaction is exposed in the app.
+- Test Purchase offers three routes via Merchant Index: `M1=01` card, `M1=99` e-wallet QR (terminal displays a DuitNow QR for the customer's e-wallet to scan) and `M1=02` scan-customer-QR (terminal camera reads the customer's wallet barcode). All three share the same Ping and test-mode gate.
 - A Purchase is successful only for a validated terminal response with response indicator `1`, transaction code `20`, and response code `00`. The main screen then shows `PAYMENT SUCCESS` with the amount and available receipt references; raw data remains in diagnostics.
 - Settlement changes terminal batch state. It requires test-mode confirmation plus a separate Settlement confirmation.
 - Do not enter production merchant secrets. The app does not ship with any Pay Account ID.
@@ -20,11 +20,13 @@ Use only a CardBiz/Castles terminal configured with a test merchant profile.
 - Bluetooth Classic RFCOMM connection with an editable service UUID.
 - Automatic USB/OTG detection, Android USB permission prompt, reconnect-on-plug, CDC ACM 9600/8N1 configuration and bulk I/O.
 - Experimental direct TCP socket mode for terminals whose CardBiz configuration explicitly supports it.
-- Simple card-only POS-style Verify, Pay and Last Sale buttons, with connection settings and raw logs kept under Connection & Diagnostics.
+- Simple POS-style Ping, Pay by Card, Pay by E-wallet QR and Last Sale buttons, plus a secondary scan-customer-QR option, with connection settings and raw logs kept under Connection & Diagnostics.
 - Connect/disconnect state, raw TX/RX hex, ACK/NACK events and parsed response fields.
-- Ping (`FF`), Verify ID (`00`), card Purchase (`20` with `M1=01`), Last Transaction Inquiry (`12`), Settlement (`50`), Get Batch Detail (`51`) and Cancel (`XX`).
+- Ping (`FF`), Verify ID (`00`), Purchase (`20` with `M1=01`, `M1=02` or `M1=99`), Last Transaction Inquiry (`12`), Settlement (`50`), Get Batch Detail (`51`) and Cancel (`XX`).
+- Card purchases record the card type (`D4`, falling back to issuer `D2`), the last four digits of the masked card number (`30`), entry mode (`E6`), RRN, batch, terminal ID, merchant number and terminal date/time in the payment result. The CVV is never returned by the terminal and is not collected.
+- Wallet custom data in field `99` (tag/length/value, e.g. `B910` wallet product name) and DuitNow tags `N8`/`N4`/`N5`/`N6` are parsed and shown in the payment result.
 - Packed-BCD lengths, STX/ETX/LRC, 2-second ACK timeout, three total sends, 2-minute response timeout, response ACK/NACK and multi-message responses.
-- Unit tests matching the PDF's Verify ID and Purchase sample request frames byte-for-byte.
+- Unit tests matching the PDF's Verify ID, card Purchase, wallet Purchase and DuitNow QR Purchase sample frames byte-for-byte, plus wallet and DuitNow response decoding.
 
 ## Build
 
@@ -48,7 +50,7 @@ app/build/outputs/apk/debug/app-debug.apk
 A versioned copy from the verified build is also placed at:
 
 ```text
-output/apk/CardBiz-ECR-Test-0.3.4-debug.apk
+output/apk/CardBiz-ECR-Test-0.4.0-debug.apk
 ```
 
 Install on a connected test device with:
@@ -66,6 +68,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 5. Bluetooth defaults to SPP UUID `00001101-0000-1000-8000-00805F9B34FB`; replace it if CardBiz supplies a different RFCOMM UUID.
 6. Tap **Connect Test / Ping** and confirm `RX ACK`, valid LRC and an `FF/00` or `FF/CP` response.
 7. Tick the test-profile confirmation and tap **Pay by Card** with a low value such as `0.01`. The app sends `M1=01`, so the terminal goes directly to its tap/insert-card screen.
+8. To test e-wallet QR, tap **Pay by E-wallet QR**. The app sends `M1=99`; the terminal displays a DuitNow QR that the customer scans with TNG, Boost, GrabPay or a banking app. A successful response carries the `N5` bill number and `N6` PayNet Biz Msg ID.
+9. The smaller alternative button sends `M1=02`; the terminal opens its camera and reads the QR / barcode shown in the customer's wallet app. A successful response carries card entry mode `60` and wallet custom data in field `99` (for example `B910` = `TNG WALLET`).
+
+If the terminal answers a wallet or DuitNow request with response code `TE` or a merchant-selection error, that merchant index is not configured on the terminal profile. Ask CardBiz to enable the wallet / DuitNow merchant on the test terminal; the app-side framing matches the v1.59 samples byte-for-byte.
 
 Pay Account ID is optional for Purchase. Leave it blank when CardBiz has only supplied MID/TID; never substitute MID or TID into that field. Commands such as Verify ID, Last Transaction Inquiry, Batch Detail and Settlement still require the 20-character Pay Account ID.
 

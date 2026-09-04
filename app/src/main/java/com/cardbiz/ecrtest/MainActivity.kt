@@ -42,6 +42,7 @@ import com.cardbiz.ecrtest.protocol.EcrCommandInput
 import com.cardbiz.ecrtest.protocol.EcrCommandType
 import com.cardbiz.ecrtest.protocol.EcrCommands
 import com.cardbiz.ecrtest.protocol.DecodedEcrMessage
+import com.cardbiz.ecrtest.protocol.PaymentRoute
 import com.cardbiz.ecrtest.session.EcrSession
 import com.cardbiz.ecrtest.session.EcrTransport
 import com.cardbiz.ecrtest.transport.BluetoothRfcommTransport
@@ -81,11 +82,12 @@ class MainActivity : Activity() {
     private lateinit var payAccountInput: EditText
     private lateinit var transactionInput: EditText
     private lateinit var amountInput: EditText
-    private lateinit var merchantIndexInput: EditText
     private lateinit var testModeCheck: CheckBox
     private lateinit var settlementCheck: CheckBox
     private lateinit var pingButton: Button
     private lateinit var payButton: Button
+    private lateinit var ewalletButton: Button
+    private lateinit var duitnowButton: Button
     private lateinit var lastTransactionButton: Button
     private lateinit var batchButton: Button
     private lateinit var cancelButton: Button
@@ -167,7 +169,7 @@ class MainActivity : Activity() {
                 addView(text("CardBiz POS Test", 25f, NAVY).apply { setTypeface(typeface, Typeface.BOLD) })
                 addView(text("TEST TERMINAL ONLY", 12f, DANGER).apply { setTypeface(typeface, Typeface.BOLD) })
             }, weighted())
-            addView(text("v0.3.4", 12f, Color.DKGRAY))
+            addView(text("v0.4.0", 12f, Color.DKGRAY))
         }, matchWrap())
 
         statusCard = vertical().apply {
@@ -218,19 +220,34 @@ class MainActivity : Activity() {
         pingButton = primaryButton("1  CONNECT TEST / PING") { execute(EcrCommandType.PING) }
         content.addView(pingButton, margins(top = 6))
 
-        payButton = primaryButton("2  PAY BY CARD") { execute(EcrCommandType.PURCHASE) }.apply {
-            textSize = 19f
-            minHeight = dp(64)
-            backgroundTintList = ColorStateList.valueOf(BLUE)
-        }
-        content.addView(payButton, margins(top = 8))
+        content.addView(horizontal().apply {
+            payButton = primaryButton("2  PAY BY\nCARD") { execute(EcrCommandType.PURCHASE, PaymentRoute.CARD) }.apply {
+                textSize = 17f
+                minHeight = dp(72)
+                backgroundTintList = ColorStateList.valueOf(BLUE)
+            }
+            ewalletButton = primaryButton("3  PAY BY\nE-WALLET QR") {
+                execute(EcrCommandType.PURCHASE, PaymentRoute.EWALLET_QR)
+            }.apply {
+                textSize = 17f
+                minHeight = dp(72)
+                backgroundTintList = ColorStateList.valueOf(PINK)
+            }
+            addView(payButton, weighted().apply { rightMargin = dp(4) })
+            addView(ewalletButton, weighted().apply { leftMargin = dp(4) })
+        }, margins(top = 8))
 
-        content.addView(text("Credit/debit card is selected automatically. Pay unlocks after Ping and test-mode confirmation.", 12f, Color.DKGRAY).apply {
+        content.addView(text("E-wallet QR: terminal displays a DuitNow QR (M1=99) for the customer to scan with TNG, Boost, GrabPay or MAE. Card: M1=01. Both unlock after Ping and test-mode confirmation.", 12f, Color.DKGRAY).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(4), dp(5), dp(4), dp(10))
+            setPadding(dp(4), dp(5), dp(4), dp(6))
         })
 
-        lastTransactionButton = secondaryButton("LAST CARD SALE") { execute(EcrCommandType.LAST_TRANSACTION) }
+        duitnowButton = secondaryButton("Alt: terminal camera scans the customer's wallet QR (M1=02)") {
+            execute(EcrCommandType.PURCHASE, PaymentRoute.SCAN_CUSTOMER_QR)
+        }.apply { setTextColor(TEAL) }
+        content.addView(duitnowButton, matchWrap())
+
+        lastTransactionButton = secondaryButton("LAST SALE") { execute(EcrCommandType.LAST_TRANSACTION) }
         content.addView(lastTransactionButton, matchWrap())
 
         content.addView(horizontal().apply {
@@ -290,13 +307,10 @@ class MainActivity : Activity() {
         tcpPortContainer = labeled("TCP PORT", tcpPortInput)
         addView(tcpPortContainer)
 
-        merchantIndexInput = input(TEST_CARD_MERCHANT_INDEX).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            filters = arrayOf(InputFilter.LengthFilter(2))
-            isEnabled = false
+        addView(sectionTitle("Payment routes (Merchant Index M1)"))
+        PaymentRoute.entries.forEach { route ->
+            addView(text("M1=${route.merchantIndex}  ${route.title}: ${route.terminalInstruction}", 11f, Color.DKGRAY))
         }
-        addView(labeled("TEST PAYMENT ROUTE - CARD (AUTO)", merchantIndexInput))
-        addView(text("M1=01 is fixed: every Purchase goes directly to contact/contactless card payment.", 11f, Color.DKGRAY))
 
         addView(labeled("PAY ACCOUNT ID (OPTIONAL FOR PURCHASE)", payAccountInput))
         addView(text("Only Verify ID, Last Sale, Batch Detail and Settlement require this 20-character value. Do not enter MID or TID here.", 11f, Color.DKGRAY))
@@ -598,7 +612,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun execute(type: EcrCommandType) {
+    private fun execute(type: EcrCommandType, route: PaymentRoute? = null) {
         val current = transport
         if (current?.isConnected != true) {
             toast("Terminal is not connected")
@@ -623,11 +637,7 @@ class MainActivity : Activity() {
                     payAccountId = payAccountInput.text.toString(),
                     transactionId = requestedReference,
                     amountText = requestedAmount,
-                    merchantIndex = if (type == EcrCommandType.PURCHASE) {
-                        TEST_CARD_MERCHANT_INDEX
-                    } else {
-                        merchantIndexInput.text.toString()
-                    },
+                    merchantIndex = route?.merchantIndex ?: "",
                 ),
             )
         } catch (error: Exception) {
@@ -635,12 +645,9 @@ class MainActivity : Activity() {
             return
         }
 
-        val terminalInstruction = if (type == EcrCommandType.PURCHASE) {
-            "Card selected automatically - tap or insert the test card"
-        } else {
-            "Follow instructions on the payment terminal"
-        }
-        setConnectionStatus("Processing ${shortTitle(type)}...", true, terminalInstruction)
+        val terminalInstruction = route?.terminalInstruction ?: "Follow instructions on the payment terminal"
+        val processingTitle = route?.let { "${it.title} payment" } ?: shortTitle(type)
+        setConnectionStatus("Processing $processingTitle...", true, terminalInstruction)
         parsedText.text = "Waiting for terminal response..."
         activeTask = worker.submit {
             try {
@@ -656,7 +663,7 @@ class MainActivity : Activity() {
                     "Response ${index + 1}/${responses.size}\n${response.summary()}\n\nRAW\n${EcrCodec.toHex(response.raw)}"
                 }.joinToString("\n\n")
                 val displayResult = if (type == EcrCommandType.PURCHASE) {
-                    purchaseResult(lastResponse, approved, requestedAmount, requestedReference)
+                    purchaseResult(lastResponse, approved, requestedAmount, requestedReference, route ?: PaymentRoute.CARD)
                 } else {
                     diagnostics
                 }
@@ -668,7 +675,7 @@ class MainActivity : Activity() {
                         parsedText.setTextColor(if (approved) SUCCESS else DANGER)
                         val title = if (approved) "PAYMENT SUCCESS" else "PAYMENT FAILED"
                         val detail = if (approved) {
-                            "RM $requestedAmount approved"
+                            "RM $requestedAmount approved via ${route?.title ?: "card"}"
                         } else {
                             lastResponse?.fieldValue("02")?.takeIf { it.isNotBlank() }
                                 ?: "Response ${lastResponse?.responseCode ?: "missing"}"
@@ -703,20 +710,45 @@ class MainActivity : Activity() {
         approved: Boolean,
         requestedAmount: String,
         requestedReference: String,
+        route: PaymentRoute,
     ): String {
         if (response == null) return "PAYMENT FAILED\n\nNo response from terminal"
         val reference = response.fieldValue("66")?.takeIf { it.isNotBlank() } ?: requestedReference
         if (!approved) {
             val responseText = response.fieldValue("02")?.takeIf { it.isNotBlank() } ?: "Transaction not approved"
-            return "PAYMENT FAILED\n\n$responseText\nCode: ${response.responseCode}\nReference: $reference"
+            return "PAYMENT FAILED\n\n${route.title} payment\n$responseText\nCode: ${response.responseCode}\nReference: $reference"
         }
+        val custom = response.customData()
         return buildString {
             append("PAYMENT SUCCESS\n\n")
-            append("Amount: RM ").append(requestedAmount)
+            append(route.title).append(" payment")
+            if (response.isQrTransaction()) append(" (QR)")
+            append("\nAmount: RM ").append(requestedAmount)
             append("\nReference: ").append(reference)
+            response.walletProductName()?.let { append("\nWallet: ").append(it) }
+            response.cardLabel()?.takeIf { route == PaymentRoute.CARD || response.cardLastFour() != null }?.let {
+                append("\nCard type: ").append(it)
+            }
+            response.cardLastFour()?.let { append("\nCard ending: **** ").append(it) }
+            response.cardEntryMode()?.let { append("\nEntry: ").append(it) }
             response.fieldValue("01")?.takeIf { it.isNotBlank() }?.let { append("\nApproval: ").append(it) }
             response.fieldValue("65")?.takeIf { it.isNotBlank() }?.let { append("\nInvoice: ").append(it) }
             response.fieldValue("64")?.takeIf { it.isNotBlank() }?.let { append("\nTrace: ").append(it) }
+            custom["B906"]?.takeIf { it.isNotBlank() }?.let { append("\nWallet txn: ").append(it) }
+            custom["B905"]?.takeIf { it.isNotBlank() }?.let { append("\nWallet ref: ").append(it) }
+            response.fieldValue("N5")?.takeIf { it.isNotBlank() }?.let { append("\nBill no: ").append(it) }
+            response.fieldValue("N6")?.takeIf { it.isNotBlank() }?.let { append("\nBiz Msg ID: ").append(it) }
+            response.fieldValue("06")?.takeIf { it.isNotBlank() }?.let { append("\nRRN: ").append(it) }
+            response.fieldValue("50")?.takeIf { it.isNotBlank() }?.let { append("\nBatch: ").append(it) }
+            response.fieldValue("16")?.takeIf { it.isNotBlank() }?.let { append("\nTerminal ID: ").append(it) }
+            response.fieldValue("D1")?.takeIf { it.isNotBlank() }?.let { append("\nMerchant No: ").append(it) }
+            val date = response.fieldValue("03")?.takeIf { it.length == 6 }
+            val time = response.fieldValue("04")?.takeIf { it.length == 6 }
+            if (date != null || time != null) {
+                append("\nTerminal time: ")
+                date?.let { append("20").append(it.substring(0, 2)).append('-').append(it.substring(2, 4)).append('-').append(it.substring(4, 6)) }
+                time?.let { append(' ').append(it.substring(0, 2)).append(':').append(it.substring(2, 4)).append(':').append(it.substring(4, 6)) }
+            }
         }
     }
 
@@ -745,7 +777,10 @@ class MainActivity : Activity() {
         if (!::pingButton.isInitialized) return
         val connected = transport?.isConnected == true
         setEnabled(pingButton, connected)
-        setEnabled(payButton, connected && pingSucceeded && testModeCheck.isChecked)
+        val canPay = connected && pingSucceeded && testModeCheck.isChecked
+        setEnabled(payButton, canPay)
+        setEnabled(ewalletButton, canPay)
+        setEnabled(duitnowButton, canPay)
         setEnabled(lastTransactionButton, connected)
         setEnabled(batchButton, connected)
         setEnabled(cancelButton, connected)
@@ -887,7 +922,6 @@ class MainActivity : Activity() {
     private fun newReference(): String = System.currentTimeMillis().toString().padStart(20, '0').takeLast(20)
 
     companion object {
-        private const val TEST_CARD_MERCHANT_INDEX = "01"
         private const val TAG = "CardBizEcrTest"
         private const val REQUEST_BLUETOOTH = 1001
         private const val ACTION_USB_PERMISSION = "com.cardbiz.ecrtest.USB_PERMISSION"
@@ -895,6 +929,8 @@ class MainActivity : Activity() {
         private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private val NAVY = Color.rgb(18, 38, 58)
         private val BLUE = Color.rgb(23, 105, 170)
+        private val TEAL = Color.rgb(0, 122, 112)
+        private val PINK = Color.rgb(198, 28, 108)
         private val SUCCESS = Color.rgb(22, 118, 71)
         private val DANGER = Color.rgb(166, 27, 27)
         private val SURFACE = Color.rgb(245, 247, 250)

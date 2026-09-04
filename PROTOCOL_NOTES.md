@@ -41,12 +41,12 @@ The document says the LRC is the XOR of data between STX and ETX, including ETX.
 |---|---:|---|
 | Verify Pay Account ID | `00` | `00` Pay Account ID (20) |
 | Last Transaction Inquiry | `12` | `00` Pay Account ID (20), `66` Transaction ID (20) |
-| Purchase | `20` | optional `00`, `66`, `40`, `M1=01` in this test APK |
+| Purchase | `20` | optional `00`, `66`, `40`, `M1` = `01` card / `02` e-wallet / `99` DuitNow QR |
 | Settlement | `50` | `00`, `66`, `52` force flag (`0` in this app) |
 | Get Batch Detail | `51` | `00`, `66` |
 | Cancel Transaction | `XX` | `00`, `66` |
 
-The card-only test APK intentionally does not expose code `15` (QR Inquiry), wallet purchases, or DuitNow purchases.
+Wallet and DuitNow purchases reuse code `20` and differ only in Merchant Index, matching spec samples 7.6.2, 7.6.3 and 7.6.6. The alternative DuitNow form `W1=99` (sample 7.6.5) is not sent. Wallet responses carry field `99` custom data encoded as two-byte tag, one-byte binary length and ASCII value (`B901`..`B911`); DuitNow responses carry `N8`, `N4`, `N5`, `N6`. Code `15` (QR Inquiry) and `Q1` (Display DuitNow QR from a POS-supplied QR string) are not exposed.
 
 ## Transport gaps requiring CardBiz confirmation
 

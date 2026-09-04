@@ -33,12 +33,66 @@ data class DecodedEcrMessage(
     fun isApprovedResponseFor(expectedTransactionCode: String): Boolean =
         responseIndicator == '1' && transactionCode == expectedTransactionCode && responseCode == "00"
 
+    /**
+     * Wallet custom data carried in field `99`: repeated [two-byte tag][one-byte binary length][value],
+     * e.g. tag B910 = wallet product name (spec 3.7.3.2 / 7.6.3). Keys are upper-case hex such as "B910".
+     */
+    fun customData(): Map<String, String> {
+        val data = fields.lastOrNull { it.code == "99" }?.data ?: return emptyMap()
+        val result = linkedMapOf<String, String>()
+        var cursor = 0
+        while (cursor + 3 <= data.size) {
+            val tag = "%02X%02X".format(data[cursor].toInt() and 0xFF, data[cursor + 1].toInt() and 0xFF)
+            val length = data[cursor + 2].toInt() and 0xFF
+            val end = cursor + 3 + length
+            if (end > data.size) break
+            result[tag] = data.copyOfRange(cursor + 3, end).toString(StandardCharsets.US_ASCII)
+                .replace('\u0000', ' ')
+                .trimEnd()
+            cursor = end
+        }
+        return result
+    }
+
+    fun walletProductName(): String? = customData()["B910"]?.takeIf { it.isNotBlank() }
+
+    /** Card scheme / preferred name from field D4 (e.g. VISA CARD), falling back to issuer name D2. */
+    fun cardLabel(): String? = fieldValue("D4")?.trim()?.takeIf { it.isNotEmpty() }
+        ?: fieldValue("D2")?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** Last four digits of the masked PAN in field 30. The terminal never returns the CVV. */
+    fun cardLastFour(): String? {
+        val digits = fieldValue("30")?.filter(Char::isDigit) ?: return null
+        return if (digits.length >= 4) digits.takeLast(4) else null
+    }
+
+    /** Human-readable card entry mode from field E6. */
+    fun cardEntryMode(): String? = when (fieldValue("E6")?.trim()) {
+        "10" -> "Chip"
+        "20" -> "Contactless"
+        "30" -> "Swipe"
+        "40" -> "Fallback"
+        "50" -> "Manual"
+        "60" -> "QR"
+        null, "" -> null
+        else -> "Mode ${fieldValue("E6")}"
+    }
+
+    /** True when the terminal reports the sale was completed by QR (card entry mode `60`, wallet data or DuitNow tags). */
+    fun isQrTransaction(): Boolean =
+        fieldValue("E6") == "60" || customData().isNotEmpty() || !fieldValue("N5").isNullOrBlank()
+
     fun summary(): String = buildString {
         append("Transaction: ").append(transactionCode)
         append("  Response: ").append(responseCode)
         append("  More: ").append(if (moreToFollow) "yes" else "no")
         fields.forEach { field ->
-            append('\n').append(field.code).append(" = ").append(field.displayValue())
+            if (field.code == "99") {
+                append("\n99 = custom data")
+                customData().forEach { (tag, value) -> append("\n   ").append(tag).append(" = ").append(value) }
+            } else {
+                append('\n').append(field.code).append(" = ").append(field.displayValue())
+            }
         }
     }
 }
