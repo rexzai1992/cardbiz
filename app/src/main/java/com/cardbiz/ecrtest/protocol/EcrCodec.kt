@@ -28,6 +28,11 @@ data class DecodedEcrMessage(
     val moreToFollow: Boolean,
     val fields: List<EcrField>,
 ) {
+    fun fieldValue(code: String): String? = fields.lastOrNull { it.code == code }?.displayValue()
+
+    fun isApprovedResponseFor(expectedTransactionCode: String): Boolean =
+        responseIndicator == '1' && transactionCode == expectedTransactionCode && responseCode == "00"
+
     fun summary(): String = buildString {
         append("Transaction: ").append(transactionCode)
         append("  Response: ").append(responseCode)

@@ -90,6 +90,25 @@ class EcrCodecTest {
         assertEquals("000000000001", EcrCommands.amount("0.01"))
     }
 
+    @Test
+    fun approvalRequiresResponseIndicatorTransactionAndResponseCode() {
+        val approved = DecodedEcrMessage(
+            raw = byteArrayOf(),
+            transportHeader = EcrCodec.TRANSPORT_HEADER,
+            formatVersion = '1',
+            responseIndicator = '1',
+            transactionCode = "20",
+            responseCode = "00",
+            moreToFollow = false,
+            fields = listOf(EcrField("01", "123456")),
+        )
+        assertEquals("123456", approved.fieldValue("01"))
+        assertEquals(true, approved.isApprovedResponseFor("20"))
+        assertEquals(false, approved.copy(responseIndicator = '0').isApprovedResponseFor("20"))
+        assertEquals(false, approved.copy(transactionCode = "12").isApprovedResponseFor("20"))
+        assertEquals(false, approved.copy(responseCode = "NA").isApprovedResponseFor("20"))
+    }
+
     private fun hex(value: String): ByteArray = value.trim().split(Regex("\\s+")).map {
         it.toInt(16).toByte()
     }.toByteArray()

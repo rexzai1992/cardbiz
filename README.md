@@ -9,6 +9,7 @@ Use only a CardBiz/Castles terminal configured with a test merchant profile.
 - Ping (`FF`) is the first connection test when no Pay Account ID is available.
 - Purchase stays locked until Ping returns a valid `FF/00` or `FF/CP` response and the operator confirms test mode. Both responses have been observed across terminal firmware.
 - This build is card-only. Test Purchase always sends Merchant Index `M1=01` and no wallet or QR transaction is exposed in the app.
+- A Purchase is successful only for a validated terminal response with response indicator `1`, transaction code `20`, and response code `00`. The main screen then shows `PAYMENT SUCCESS` with the amount and available receipt references; raw data remains in diagnostics.
 - Settlement changes terminal batch state. It requires test-mode confirmation plus a separate Settlement confirmation.
 - Do not enter production merchant secrets. The app does not ship with any Pay Account ID.
 - Raw protocol data is shown on screen and mirrored to Logcat for diagnostics. Do not collect logs from production transactions.
@@ -47,7 +48,7 @@ app/build/outputs/apk/debug/app-debug.apk
 A versioned copy from the verified build is also placed at:
 
 ```text
-output/apk/CardBiz-ECR-Test-0.3.3-debug.apk
+output/apk/CardBiz-ECR-Test-0.3.4-debug.apk
 ```
 
 Install on a connected test device with:

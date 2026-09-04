@@ -41,6 +41,7 @@ import com.cardbiz.ecrtest.protocol.EcrCodec
 import com.cardbiz.ecrtest.protocol.EcrCommandInput
 import com.cardbiz.ecrtest.protocol.EcrCommandType
 import com.cardbiz.ecrtest.protocol.EcrCommands
+import com.cardbiz.ecrtest.protocol.DecodedEcrMessage
 import com.cardbiz.ecrtest.session.EcrSession
 import com.cardbiz.ecrtest.session.EcrTransport
 import com.cardbiz.ecrtest.transport.BluetoothRfcommTransport
@@ -166,7 +167,7 @@ class MainActivity : Activity() {
                 addView(text("CardBiz POS Test", 25f, NAVY).apply { setTypeface(typeface, Typeface.BOLD) })
                 addView(text("TEST TERMINAL ONLY", 12f, DANGER).apply { setTypeface(typeface, Typeface.BOLD) })
             }, weighted())
-            addView(text("v0.3.3", 12f, Color.DKGRAY))
+            addView(text("v0.3.4", 12f, Color.DKGRAY))
         }, matchWrap())
 
         statusCard = vertical().apply {
@@ -241,7 +242,7 @@ class MainActivity : Activity() {
             addView(cancelButton, weighted())
         }, matchWrap())
 
-        content.addView(sectionTitle("Terminal response"))
+        content.addView(sectionTitle("Payment result"))
         parsedText = text("Connect a terminal, then tap Connect Test / Ping.", 14f, INK).apply {
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
@@ -613,13 +614,15 @@ class MainActivity : Activity() {
                 return
             }
         }
+        val requestedAmount = amountInput.text.toString().trim()
+        val requestedReference = transactionInput.text.toString().trim()
         val request = try {
             EcrCommands.build(
                 EcrCommandInput(
                     type = type,
                     payAccountId = payAccountInput.text.toString(),
-                    transactionId = transactionInput.text.toString(),
-                    amountText = amountInput.text.toString(),
+                    transactionId = requestedReference,
+                    amountText = requestedAmount,
                     merchantIndex = if (type == EcrCommandType.PURCHASE) {
                         TEST_CARD_MERCHANT_INDEX
                     } else {
@@ -646,16 +649,39 @@ class MainActivity : Activity() {
                 val approved = if (type == EcrCommandType.PING) {
                     lastResponse?.transactionCode == "FF" && lastResponse.responseCode in setOf("00", "CP")
                 } else {
-                    lastResponse?.responseCode == "00"
+                    lastResponse?.isApprovedResponseFor(type.code) == true
                 }
                 if (type == EcrCommandType.PING) pingSucceeded = approved
-                val parsed = responses.mapIndexed { index, response ->
+                val diagnostics = responses.mapIndexed { index, response ->
                     "Response ${index + 1}/${responses.size}\n${response.summary()}\n\nRAW\n${EcrCodec.toHex(response.raw)}"
                 }.joinToString("\n\n")
+                val displayResult = if (type == EcrCommandType.PURCHASE) {
+                    purchaseResult(lastResponse, approved, requestedAmount, requestedReference)
+                } else {
+                    diagnostics
+                }
                 runOnUiThread {
-                    parsedText.text = parsed
-                    val result = if (approved) "APPROVED" else "RESPONSE RECEIVED"
-                    setConnectionStatus(result, approved, shortTitle(type))
+                    parsedText.text = displayResult
+                    if (type == EcrCommandType.PURCHASE) {
+                        parsedText.textSize = 20f
+                        parsedText.setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+                        parsedText.setTextColor(if (approved) SUCCESS else DANGER)
+                        val title = if (approved) "PAYMENT SUCCESS" else "PAYMENT FAILED"
+                        val detail = if (approved) {
+                            "RM $requestedAmount approved"
+                        } else {
+                            lastResponse?.fieldValue("02")?.takeIf { it.isNotBlank() }
+                                ?: "Response ${lastResponse?.responseCode ?: "missing"}"
+                        }
+                        setConnectionStatus(title, approved, detail)
+                        if (!approved) statusCard.background = rounded(DANGER, 12)
+                    } else {
+                        parsedText.textSize = 14f
+                        parsedText.typeface = Typeface.MONOSPACE
+                        parsedText.setTextColor(INK)
+                        val result = if (approved) "APPROVED" else "RESPONSE RECEIVED"
+                        setConnectionStatus(result, approved, shortTitle(type))
+                    }
                     updateActionState()
                 }
             } catch (_: InterruptedException) {
@@ -669,6 +695,28 @@ class MainActivity : Activity() {
                     updateActionState()
                 }
             }
+        }
+    }
+
+    private fun purchaseResult(
+        response: DecodedEcrMessage?,
+        approved: Boolean,
+        requestedAmount: String,
+        requestedReference: String,
+    ): String {
+        if (response == null) return "PAYMENT FAILED\n\nNo response from terminal"
+        val reference = response.fieldValue("66")?.takeIf { it.isNotBlank() } ?: requestedReference
+        if (!approved) {
+            val responseText = response.fieldValue("02")?.takeIf { it.isNotBlank() } ?: "Transaction not approved"
+            return "PAYMENT FAILED\n\n$responseText\nCode: ${response.responseCode}\nReference: $reference"
+        }
+        return buildString {
+            append("PAYMENT SUCCESS\n\n")
+            append("Amount: RM ").append(requestedAmount)
+            append("\nReference: ").append(reference)
+            response.fieldValue("01")?.takeIf { it.isNotBlank() }?.let { append("\nApproval: ").append(it) }
+            response.fieldValue("65")?.takeIf { it.isNotBlank() }?.let { append("\nInvoice: ").append(it) }
+            response.fieldValue("64")?.takeIf { it.isNotBlank() }?.let { append("\nTrace: ").append(it) }
         }
     }
 
