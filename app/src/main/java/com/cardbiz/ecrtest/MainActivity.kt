@@ -257,7 +257,9 @@ class MainActivity : Activity() {
             updateAdvancedVisibility()
             refreshSelectedMode(startDiscovery = false)
         }
+        syncingConnectionUi = true
         (if (prefs.getBoolean(PREF_WIFI_MODE, false)) wifiRadio else cableRadio).isChecked = true
+        syncingConnectionUi = false
         payAccountInput = input("").apply {
             hint = "Optional - 20 characters from CardBiz"
             filters = arrayOf(InputFilter.LengthFilter(20))
@@ -420,6 +422,9 @@ class MainActivity : Activity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
+        val wifi = getPreferences(Context.MODE_PRIVATE).getBoolean(PREF_WIFI_MODE, false)
+        usbAutoPaused = wifi
+        modeSpinner.setSelection((if (wifi) ConnectionMode.TCP else ConnectionMode.USB).ordinal)
         updateAdvancedVisibility()
     }
 
