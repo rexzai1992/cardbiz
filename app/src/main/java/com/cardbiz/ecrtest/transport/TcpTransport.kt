@@ -13,7 +13,7 @@ class TcpTransport(
     private var socket: Socket? = null
 
     override val displayName: String
-        get() = "Experimental TCP $host:$port"
+        get() = "WiFi TCP $host:$port"
 
     override val isConnected: Boolean
         get() = socket?.let { it.isConnected && !it.isClosed } == true

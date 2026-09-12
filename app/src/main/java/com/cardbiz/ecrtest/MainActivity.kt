@@ -33,6 +33,8 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -46,8 +48,11 @@ import com.cardbiz.ecrtest.protocol.PaymentRoute
 import com.cardbiz.ecrtest.session.EcrSession
 import com.cardbiz.ecrtest.session.EcrTransport
 import com.cardbiz.ecrtest.transport.BluetoothRfcommTransport
+import com.cardbiz.ecrtest.transport.TcpListenTransport
 import com.cardbiz.ecrtest.transport.TcpTransport
 import com.cardbiz.ecrtest.transport.UsbSerialTransport
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,9 +64,9 @@ import java.util.concurrent.Future
 @SuppressLint("SetTextI18n")
 class MainActivity : Activity() {
     private enum class ConnectionMode(val label: String) {
-        USB("USB / OTG - automatic"),
+        USB("Cable - USB / RS232 (automatic)"),
         BLUETOOTH("Bluetooth"),
-        TCP("TCP/IP - advanced"),
+        TCP("WiFi - TCP/IP"),
     }
 
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
@@ -103,6 +108,12 @@ class MainActivity : Activity() {
     private lateinit var tcpHostContainer: LinearLayout
     private lateinit var tcpPortInput: EditText
     private lateinit var tcpPortContainer: LinearLayout
+    private lateinit var cableRadio: RadioButton
+    private lateinit var wifiRadio: RadioButton
+    private lateinit var wifiPanel: LinearLayout
+    private lateinit var wifiListenCheck: CheckBox
+    private lateinit var wifiDeviceIpText: TextView
+    private var syncingConnectionUi = false
     private lateinit var logText: TextView
     private val logBuffer = StringBuilder()
 
@@ -169,7 +180,7 @@ class MainActivity : Activity() {
                 addView(text("CardBiz POS Test", 25f, NAVY).apply { setTypeface(typeface, Typeface.BOLD) })
                 addView(text("TEST TERMINAL ONLY", 12f, DANGER).apply { setTypeface(typeface, Typeface.BOLD) })
             }, weighted())
-            addView(text("v0.4.0", 12f, Color.DKGRAY))
+            addView(text("v0.5.0", 12f, Color.DKGRAY))
         }, matchWrap())
 
         statusCard = vertical().apply {
@@ -185,6 +196,68 @@ class MainActivity : Activity() {
         root.addView(statusCard, margins(top = 14, bottom = 8))
 
         val content = vertical()
+        val prefs = getPreferences(Context.MODE_PRIVATE)
+
+        content.addView(label("CONNECTION"))
+        val methodGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        cableRadio = RadioButton(this).apply { text = "CABLE  (USB / RS232)" }
+        wifiRadio = RadioButton(this).apply { text = "WIFI  (TCP/IP)" }
+        methodGroup.addView(cableRadio, weighted())
+        methodGroup.addView(wifiRadio, weighted())
+        content.addView(methodGroup, matchWrap())
+
+        tcpHostInput = input(prefs.getString(PREF_WIFI_HOST, "") ?: "").apply {
+            hint = "Terminal IP, e.g. 192.168.100.50"
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        tcpHostContainer = labeled("TERMINAL IP", tcpHostInput)
+        tcpPortInput = input(prefs.getString(PREF_WIFI_PORT, "") ?: "").apply {
+            hint = "Port from CardBiz"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(5))
+        }
+        tcpPortContainer = labeled("PORT", tcpPortInput)
+        wifiListenCheck = CheckBox(this).apply {
+            text = "Terminal connects to this device instead (app listens on the port)"
+            isChecked = prefs.getBoolean(PREF_WIFI_LISTEN, false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean(PREF_WIFI_LISTEN, checked).apply()
+                tcpHostContainer.visibility = if (checked) View.GONE else View.VISIBLE
+            }
+        }
+        wifiDeviceIpText = text("", 12f, Color.DKGRAY)
+        wifiPanel = vertical().apply {
+            background = rounded(Color.WHITE, 10)
+            setPadding(dp(12), dp(6), dp(12), dp(12))
+            addView(horizontal().apply {
+                addView(tcpHostContainer, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f))
+                addView(tcpPortContainer, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) })
+            }, matchWrap())
+            addView(wifiListenCheck)
+            addView(wifiDeviceIpText)
+            addView(horizontal().apply {
+                addView(primaryButton("CONNECT WIFI") {
+                    usbAutoPaused = true
+                    connectSelected()
+                }.apply { minHeight = dp(46); textSize = 14f }, weighted().apply { rightMargin = dp(4) })
+                addView(secondaryButton("DISCONNECT") { disconnectCurrent(userInitiated = true) }, weighted().apply { leftMargin = dp(4) })
+            }, margins(top = 6))
+            addView(text("v1.59 defines only RS232 and Bluetooth. WiFi works only if CardBiz enabled ECR over TCP/IP on the terminal and supplied the IP, port and direction.", 11f, Color.DKGRAY))
+        }
+        tcpHostContainer.visibility = if (wifiListenCheck.isChecked) View.GONE else View.VISIBLE
+        content.addView(wifiPanel, margins(top = 4, bottom = 4))
+
+        methodGroup.setOnCheckedChangeListener { _, _ ->
+            if (syncingConnectionUi) return@setOnCheckedChangeListener
+            val wifi = wifiRadio.isChecked
+            prefs.edit().putBoolean(PREF_WIFI_MODE, wifi).apply()
+            if (transport?.isConnected == true) disconnectCurrent(userInitiated = true)
+            usbAutoPaused = wifi
+            modeSpinner.setSelection((if (wifi) ConnectionMode.TCP else ConnectionMode.USB).ordinal)
+            updateAdvancedVisibility()
+            refreshSelectedMode(startDiscovery = false)
+        }
+        (if (prefs.getBoolean(PREF_WIFI_MODE, false)) wifiRadio else cableRadio).isChecked = true
         payAccountInput = input("").apply {
             hint = "Optional - 20 characters from CardBiz"
             filters = arrayOf(InputFilter.LengthFilter(20))
@@ -297,15 +370,7 @@ class MainActivity : Activity() {
         addView(bluetoothUuidContainer)
         addView(text("CardBiz protocol name: com.castles.protocolCastles", 11f, Color.DKGRAY))
 
-        tcpHostInput = input("").apply { hint = "Terminal IP address" }
-        tcpHostContainer = labeled("TCP HOST", tcpHostInput)
-        addView(tcpHostContainer)
-        tcpPortInput = input("").apply {
-            hint = "Port supplied by CardBiz"
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
-        tcpPortContainer = labeled("TCP PORT", tcpPortInput)
-        addView(tcpPortContainer)
+        addView(text("WiFi IP and port are set on the main screen under CONNECTION.", 11f, Color.DKGRAY))
 
         addView(sectionTitle("Payment routes (Merchant Index M1)"))
         PaymentRoute.entries.forEach { route ->
@@ -364,9 +429,27 @@ class MainActivity : Activity() {
         val mode = selectedMode()
         deviceContainer.visibility = if (mode == ConnectionMode.TCP) View.GONE else View.VISIBLE
         bluetoothUuidContainer.visibility = if (mode == ConnectionMode.BLUETOOTH) View.VISIBLE else View.GONE
-        tcpHostContainer.visibility = if (mode == ConnectionMode.TCP) View.VISIBLE else View.GONE
-        tcpPortContainer.visibility = if (mode == ConnectionMode.TCP) View.VISIBLE else View.GONE
+        if (::wifiPanel.isInitialized) {
+            wifiPanel.visibility = if (mode == ConnectionMode.TCP) View.VISIBLE else View.GONE
+            if (mode == ConnectionMode.TCP) wifiDeviceIpText.text = "This device's WiFi IP: ${deviceIpAddress() ?: "not on WiFi"}"
+            syncingConnectionUi = true
+            when (mode) {
+                ConnectionMode.TCP -> wifiRadio.isChecked = true
+                ConnectionMode.USB -> cableRadio.isChecked = true
+                ConnectionMode.BLUETOOTH -> Unit
+            }
+            syncingConnectionUi = false
+        }
     }
+
+    private fun deviceIpAddress(): String? = runCatching {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress }
+            ?.hostAddress
+    }.getOrNull()
 
     private fun refreshSelectedMode(startDiscovery: Boolean) {
         when (selectedMode()) {
@@ -375,7 +458,7 @@ class MainActivity : Activity() {
                 if (!usbAutoPaused) autoDetectUsb()
             }
             ConnectionMode.BLUETOOTH -> refreshBluetoothDevices(startDiscovery)
-            ConnectionMode.TCP -> setDeviceLabels(listOf("Direct TCP socket"))
+            ConnectionMode.TCP -> setDeviceLabels(listOf("WiFi TCP/IP socket"))
         }
     }
 
@@ -415,6 +498,10 @@ class MainActivity : Activity() {
 
     private fun autoDetectUsb() {
         if (usbAutoPaused || connectionInProgress || transport?.isConnected == true) return
+        if (::wifiRadio.isInitialized && wifiRadio.isChecked) {
+            setConnectionStatus("WiFi mode", false, "Enter the terminal IP and port, then tap Connect WiFi")
+            return
+        }
         refreshUsbDevices()
         val device = usbDevices.firstOrNull(::hasBulkSerialEndpoints)
         if (device == null) {
@@ -545,11 +632,20 @@ class MainActivity : Activity() {
                 }
                 ConnectionMode.TCP -> {
                     val host = tcpHostInput.text.toString().trim()
-                    require(host.isNotEmpty()) { "Enter the terminal TCP host" }
                     val port = tcpPortInput.text.toString().toIntOrNull()
-                        ?: throw IllegalArgumentException("Enter a valid TCP port")
+                        ?: throw IllegalArgumentException("Enter the TCP port supplied by CardBiz")
                     require(port in 1..65535) { "TCP port must be between 1 and 65535" }
-                    connectTransport(TcpTransport(host, port))
+                    getPreferences(Context.MODE_PRIVATE).edit()
+                        .putString(PREF_WIFI_HOST, host)
+                        .putString(PREF_WIFI_PORT, port.toString())
+                        .apply()
+                    if (wifiListenCheck.isChecked) {
+                        appendLog("WiFi listen: waiting for terminal on ${deviceIpAddress() ?: "?"}:$port")
+                        connectTransport(TcpListenTransport(port))
+                    } else {
+                        require(host.isNotEmpty()) { "Enter the terminal IP address" }
+                        connectTransport(TcpTransport(host, port))
+                    }
                 }
             }
         } catch (error: Exception) {
@@ -923,6 +1019,10 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "CardBizEcrTest"
+        private const val PREF_WIFI_MODE = "wifi_mode"
+        private const val PREF_WIFI_HOST = "wifi_host"
+        private const val PREF_WIFI_PORT = "wifi_port"
+        private const val PREF_WIFI_LISTEN = "wifi_listen"
         private const val REQUEST_BLUETOOTH = 1001
         private const val ACTION_USB_PERMISSION = "com.cardbiz.ecrtest.USB_PERMISSION"
         private const val MAX_LOG_CHARS = 80_000

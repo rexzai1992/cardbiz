@@ -23,7 +23,7 @@ This is a diagnostic Android application for proving communication between an An
 
 - Bluetooth: raw RFCOMM. The PDF supplies the protocol name `com.castles.protocolCastles` but no RFCOMM service UUID. The app exposes a UUID field and defaults to the standard Serial Port Profile UUID for an initial test.
 - USB serial/OTG: automatically detects bulk serial devices on launch/attach, disconnects on unplug and reconnects on replug. It uses raw USB host endpoints with CDC ACM line coding (9600, 8N1). The first attach can require Android approval; some chipsets need a vendor-specific driver or CardBiz SDK.
-- TCP/IP: experimental direct socket adapter. Version 1.59 does not define a host, port or TCP framing; CardBiz must confirm those settings before this mode can be considered supported.
+- WiFi TCP/IP: client mode (app connects to terminal IP:port) and listen mode (terminal connects to the app). Version 1.59 does not define a host, port, role or TCP framing; CardBiz must confirm those settings before this mode can be considered supported.
 - Vendor SDK: `VendorSdkTransport` is a documented placeholder for a supplied Android AAR.
 
 ## Safety boundaries

@@ -19,7 +19,7 @@ Use only a CardBiz/Castles terminal configured with a test merchant profile.
 - Bluetooth paired-device list and discovery.
 - Bluetooth Classic RFCOMM connection with an editable service UUID.
 - Automatic USB/OTG detection, Android USB permission prompt, reconnect-on-plug, CDC ACM 9600/8N1 configuration and bulk I/O.
-- Experimental direct TCP socket mode for terminals whose CardBiz configuration explicitly supports it.
+- WiFi (TCP/IP) as a first-class connection method next to Cable on the main screen: enter the terminal IP and port, or tick the listen option so the terminal connects to this device's IP instead. Settings persist across restarts. The spec defines no TCP transport, so this works only once CardBiz enables ECR over TCP/IP on the terminal and supplies IP, port and direction.
 - Simple POS-style Ping, Pay by Card, Pay by E-wallet QR and Last Sale buttons, plus a secondary scan-customer-QR option, with connection settings and raw logs kept under Connection & Diagnostics.
 - Connect/disconnect state, raw TX/RX hex, ACK/NACK events and parsed response fields.
 - Ping (`FF`), Verify ID (`00`), Purchase (`20` with `M1=01`, `M1=02` or `M1=99`), Last Transaction Inquiry (`12`), Settlement (`50`), Get Batch Detail (`51`) and Cancel (`XX`).
@@ -51,7 +51,7 @@ app/build/outputs/apk/debug/app-debug.apk
 A versioned copy from the verified build is also placed at:
 
 ```text
-output/apk/CardBiz-ECR-Test-0.4.0-debug.apk
+output/apk/CardBiz-ECR-Test-0.5.0-debug.apk
 ```
 
 Install on a connected test device with:
